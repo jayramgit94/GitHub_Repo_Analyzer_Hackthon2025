@@ -6,24 +6,33 @@ require("dotenv").config();
 
 const app = express();
 
-// ✅ Allow Netlify frontend + localhost during development
+// ✅ Allowed Origins: Localhost (for dev), Netlify frontend, Render backend
 const allowedOrigins = [
-    "http://localhost:5500", // change if you're using another local port
-    "https://github-repo-visualize.netlify.app/" // 🔁 replace with your actual Netlify domain
+    "http://localhost:5500",
+    "https://lucent-begonia-ed248d.netlify.app", // ✅ Netlify Production
+    "https://67f0c752317a985c8beacffa--lucent-begonia-ed248d.netlify.app", // ✅ Netlify Preview
+    "https://git-repo-analyzer.onrender.com"
 ];
+
 
 app.use(cors({
     origin: function (origin, callback) {
-        // allow requests with no origin (like mobile apps or curl)
+        console.log("🔎 CORS check — Incoming origin:", origin);
+
+        // Allow server-to-server or Postman/curl (no origin)
         if (!origin) return callback(null, true);
-        if (allowedOrigins.includes(origin)) return callback(null, true);
-        return callback(new Error("Not allowed by CORS"));
+
+        if (allowedOrigins.includes(origin)) {
+            return callback(null, true);
+        } else {
+            return callback(new Error("Not allowed by CORS"));
+        }
     }
 }));
 
 app.use(express.json());
 
-// ✅ Serve static files (for local development only)
+// ✅ Serve static files locally (optional)
 app.use(express.static(path.join(__dirname, "../frontend")));
 app.get("/", (req, res) => {
     res.sendFile(path.join(__dirname, "../frontend/index.html"));
@@ -31,7 +40,7 @@ app.get("/", (req, res) => {
 
 const GITHUB_API_BASE = "https://api.github.com/repos";
 
-// 🟢 Fetch Repository Details
+// 🟢 Main GitHub Repo Analyzer Endpoint
 app.get("/repo", async (req, res) => {
     try {
         const { url } = req.query;
@@ -51,7 +60,7 @@ app.get("/repo", async (req, res) => {
             contributions: user.contributions
         })).sort((a, b) => b.contributions - a.contributions).slice(0, 5);
 
-        const prFrequency = pullRequestsData.length / ((new Date(repoData.updated_at) - new Date(repoData.created_at)) / (1000 * 60 * 60 * 24)); // PRs per day
+        const prFrequency = pullRequestsData.length / ((new Date(repoData.updated_at) - new Date(repoData.created_at)) / (1000 * 60 * 60 * 24));
 
         const issueResolutionTimes = issuesData
             .filter(issue => issue.state === "closed" && issue.closed_at)
@@ -79,14 +88,14 @@ app.get("/repo", async (req, res) => {
             avgIssueResolutionTime
         };
 
-        console.log("📜 GitHub Repo Data:", result);
+        console.log("📦 GitHub Repo Data Sent:", result);
         res.json(result);
     } catch (error) {
-        console.error("❌ Error Fetching Repo Data:", error.message);
+        console.error("❌ Failed to Fetch GitHub Data:", error.message);
         res.status(500).json({ error: "Failed to fetch repository details!" });
     }
 });
 
 // 🚀 Start Server
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`🚀 Server live at http://localhost:${PORT}`));
