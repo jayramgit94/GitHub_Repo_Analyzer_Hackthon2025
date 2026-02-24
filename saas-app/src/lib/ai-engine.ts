@@ -35,8 +35,8 @@
  * - Rule engine handles ~70% of scoring without AI
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { GitHubAnalysisInput } from "./github";
+import { callGroqJSON } from "./groq-client";
 
 // ===================== TYPES =====================
 
@@ -435,7 +435,7 @@ async function getAIInsights(input: GitHubAnalysisInput, scores: ScoreBreakdown)
   insights: AIInsight[];
   aiPowered: boolean;
 }> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
 
   // Fallback if no API key
   if (!apiKey) {
@@ -443,9 +443,6 @@ async function getAIInsights(input: GitHubAnalysisInput, scores: ScoreBreakdown)
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-
     // PROMPT ENGINEERING — Single comprehensive prompt to minimize API calls
     const prompt = `You are a senior software engineer performing a code repository analysis.
 
@@ -501,16 +498,19 @@ Provide a JSON response with EXACTLY this structure (no markdown, no code fences
 
 Provide exactly 5 suggestions and 5-8 insights. Be specific to THIS repository, not generic advice.`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const parsed = await callGroqJSON<{
+      summary?: string;
+      suggestions?: string[];
+      insights?: AIInsight[];
+    }>([
+      { role: "system", content: "You are a senior software engineer. Always respond with valid JSON only." },
+      { role: "user", content: prompt },
+    ], { maxTokens: 3000 });
 
-    // Parse JSON from response (handle potential markdown wrapping)
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
+    if (!parsed) {
       return { ...generateFallbackInsights(input, scores), aiPowered: false };
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
     return {
       summary: parsed.summary || "Analysis complete.",
       suggestions: parsed.suggestions || [],

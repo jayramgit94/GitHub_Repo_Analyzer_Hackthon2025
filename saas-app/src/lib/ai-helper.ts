@@ -1,21 +1,15 @@
 /*
  * ============================================
- * AI Helper — Reusable Gemini Integration
+ * AI Helper — Reusable Groq AI Integration
  * ============================================
  *
- * Provides reusable functions for calling Gemini AI
- * across the app (reviews, admin insights, etc.)
+ * Provides reusable functions for calling Groq AI
+ * (LLaMA 3.3 70B) across the app (reviews, admin
+ * insights, etc.). Ultra-fast inference via Groq LPU.
  * Always includes graceful fallback when AI is unavailable.
  */
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const getModel = () => {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
-  const genAI = new GoogleGenerativeAI(apiKey);
-  return genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-};
+import { callGroq, callGroqJSON } from "./groq-client";
 
 /**
  * Generate AI-powered sentiment summary from reviews
@@ -29,20 +23,18 @@ export async function getReviewInsights(
   commonThemes: string[];
   improvementAreas: string[];
 }> {
-  const model = getModel();
-
   // Calculate basic metrics for fallback
   const avgRating = reviews.length > 0 
     ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length 
     : 0;
 
-  if (!model || reviews.length === 0) {
+  if (!process.env.GROQ_API_KEY || reviews.length === 0) {
     return generateFallbackReviewInsights(reviews, avgRating);
   }
 
   try {
     const reviewTexts = reviews
-      .slice(0, 30) // Limit to 30 most recent for token efficiency
+      .slice(0, 30)
       .map((r, i) => `Review ${i + 1} (${r.rating}/5 stars): "${r.comment}"`)
       .join("\n");
 
@@ -65,17 +57,23 @@ Provide a JSON response with EXACTLY this structure (no markdown, no code fences
 
 Be specific and reference actual review content. Don't be generic.`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const parsed = await callGroqJSON<{
+      sentiment?: string;
+      summary?: string;
+      highlights?: string[];
+      commonThemes?: string[];
+      improvementAreas?: string[];
+    }>([
+      { role: "system", content: "You are a review analysis AI. Always respond with valid JSON only." },
+      { role: "user", content: prompt },
+    ]);
 
-    if (!jsonMatch) {
+    if (!parsed) {
       return generateFallbackReviewInsights(reviews, avgRating);
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
     return {
-      sentiment: parsed.sentiment || (avgRating >= 4 ? "positive" : avgRating >= 3 ? "mixed" : "negative"),
+      sentiment: (parsed.sentiment as "positive" | "mixed" | "negative") || (avgRating >= 4 ? "positive" : avgRating >= 3 ? "mixed" : "negative"),
       summary: parsed.summary || "Analysis complete.",
       highlights: parsed.highlights || [],
       commonThemes: parsed.commonThemes || [],
@@ -128,9 +126,7 @@ export async function enhanceReviewComment(
   enhanced: string;
   wasEnhanced: boolean;
 }> {
-  const model = getModel();
-
-  if (!model || comment.length < 10) {
+  if (!process.env.GROQ_API_KEY || comment.length < 10) {
     return { enhanced: comment, wasEnhanced: false };
   }
 
@@ -144,11 +140,12 @@ Improve this review to be more detailed, helpful, and well-structured while keep
 
 Return ONLY the enhanced review text, nothing else. No quotes, no explanation, just the enhanced review.`;
 
-    const result = await model.generateContent(prompt);
-    const enhanced = result.response.text().trim();
+    const enhanced = await callGroq([
+      { role: "system", content: "You are a writing assistant. Return only the enhanced text, no explanation." },
+      { role: "user", content: prompt },
+    ]);
 
-    // Safety: if AI returns something way too different or long, keep original
-    if (enhanced.length > 1000 || enhanced.length < 10) {
+    if (!enhanced || enhanced.length > 1000 || enhanced.length < 10) {
       return { enhanced: comment, wasEnhanced: false };
     }
 
@@ -174,9 +171,7 @@ export async function getAdminInsights(stats: {
   keyMetrics: string[];
   recommendations: string[];
 }> {
-  const model = getModel();
-
-  if (!model) {
+  if (!process.env.GROQ_API_KEY) {
     return generateFallbackAdminInsights(stats);
   }
 
@@ -200,15 +195,19 @@ Provide a JSON response with EXACTLY this structure (no markdown, no code fences
 
 Be specific with numbers. Reference actual data.`;
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
-    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    const parsed = await callGroqJSON<{
+      summary?: string;
+      keyMetrics?: string[];
+      recommendations?: string[];
+    }>([
+      { role: "system", content: "You are a data analyst AI. Always respond with valid JSON only." },
+      { role: "user", content: prompt },
+    ]);
 
-    if (!jsonMatch) {
+    if (!parsed) {
       return generateFallbackAdminInsights(stats);
     }
 
-    const parsed = JSON.parse(jsonMatch[0]);
     return {
       summary: parsed.summary || "Dashboard analysis complete.",
       keyMetrics: parsed.keyMetrics || [],
