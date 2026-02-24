@@ -33,7 +33,7 @@ export default function HomePage() {
       icon: <Cpu size={22} />,
       title: "AI-Powered Analysis",
       description:
-        "Gemini AI analyzes code quality, architecture, security, and more — with actionable suggestions.",
+        "Groq AI (LLaMA 3.3) analyzes code quality, architecture, security, and more — with actionable suggestions.",
       gradient: "from-primary-500/10 to-primary-500/5",
       iconBg: "bg-primary-500/10 text-primary-500",
     },
@@ -80,7 +80,7 @@ export default function HomePage() {
   ];
 
   return (
-    <div className="min-h-screen flex flex-col relative overflow-hidden">
+    <div className="min-h-screen flex flex-col relative overflow-x-hidden">
       <Navbar />
 
       {/* Background decorations */}
@@ -108,10 +108,10 @@ export default function HomePage() {
 
           {/* Headline */}
           <FadeInUp delay={0.1}>
-            <h1 className="text-4xl sm:text-5xl lg:text-display-lg font-extrabold leading-tight mb-6 tracking-tight text-balance">
-              <span className="gradient-text">Analyze</span> any GitHub
+            <h1 className="text-3xl sm:text-5xl lg:text-display-lg font-extrabold leading-tight mb-6 tracking-tight">
+              <span className="gradient-text">Analyze</span> any GitHub{" "}
               <br className="hidden sm:block" />
-              {" "}repo in{" "}
+              repo in{" "}
               <span className="gradient-text">seconds</span>
             </h1>
           </FadeInUp>
@@ -134,7 +134,7 @@ export default function HomePage() {
             {[
               { label: "Repos Analyzed", value: "10K+", icon: <GitBranch size={14} /> },
               { label: "Score Dimensions", value: "7", icon: <BarChart3 size={14} /> },
-              { label: "AI Models", value: "Gemini", icon: <Sparkles size={14} /> },
+              { label: "AI Models", value: "Groq AI", icon: <Sparkles size={14} /> },
               { label: "Free Forever", value: "100%", icon: <CheckCircle2 size={14} /> },
             ].map((stat) => (
               <motion.div
