@@ -60,6 +60,7 @@ interface AnalysisResult {
   missingFiles: string[];
   aiSummary: string;
   aiSuggestions: string[];
+  aiPowered?: boolean;
   shareId?: string;
   repoData?: {
     description: string;
@@ -358,6 +359,13 @@ function AnalyzeDashboard() {
                   <Sparkles size={12} className="text-white" />
                 </div>
                 <span className="section-label !mb-0">AI Analysis</span>
+                <span className={`ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                  result.aiPowered
+                    ? "bg-accent-500/10 text-accent-500 border border-accent-500/20"
+                    : "bg-primary-500/10 text-primary-400 border border-primary-500/20"
+                }`}>
+                  {result.aiPowered ? "✦ Gemini AI" : "⚙ Smart Analysis"}
+                </span>
               </div>
               <AITypingEffect text={result.aiSummary} speed={15} />
 

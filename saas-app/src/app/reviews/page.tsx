@@ -328,8 +328,11 @@ export default function ReviewsPage() {
                   <div className="h-12 w-12 rounded-2xl bg-[var(--primary)]/10 flex items-center justify-center mx-auto mb-4">
                     <MessageSquare size={24} className="text-[var(--primary)]" />
                   </div>
-                  <p className="text-[var(--muted-fg)] text-sm">
-                    No reviews yet. Be the first to share your experience!
+                  <p className="text-[var(--foreground)] text-sm font-medium mb-2">
+                    No approved reviews yet
+                  </p>
+                  <p className="text-[var(--muted-fg)] text-xs leading-relaxed max-w-sm mx-auto">
+                    Reviews are moderated for quality. Submit your review using the form — it will appear here after admin approval.
                   </p>
                 </div>
               </FadeIn>

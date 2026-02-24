@@ -94,6 +94,7 @@ export async function POST(req: NextRequest) {
         missingFiles: cached.missingFiles,
         aiSummary: cached.aiSummary,
         aiSuggestions: cached.aiSuggestions,
+        aiPowered: cached.aiPowered ?? false,
         cached: true,
       });
     }
@@ -120,6 +121,7 @@ export async function POST(req: NextRequest) {
           estimatedTeamSize: dbCached.estimatedTeamSize,
           repoHealth: dbCached.repoHealth as AnalysisResult["repoHealth"],
           analyzedAt: dbCached.analyzedAt.toISOString(),
+          aiPowered: (dbCached as Record<string, unknown>).aiPowered as boolean ?? false,
         };
 
         // Warm memory cache
@@ -136,6 +138,7 @@ export async function POST(req: NextRequest) {
           missingFiles: result.missingFiles,
           aiSummary: result.aiSummary,
           aiSuggestions: result.aiSuggestions,
+          aiPowered: result.aiPowered ?? false,
           shareId: dbCached.shareId,
           cached: true,
           repoData: {
@@ -234,6 +237,7 @@ export async function POST(req: NextRequest) {
       missingFiles: analysis.missingFiles.map((f) => (typeof f === "string" ? f : f.name)),
       aiSummary: analysis.aiSummary,
       aiSuggestions: analysis.aiSuggestions,
+      aiPowered: analysis.aiPowered ?? false,
       shareId,
       cached: false,
       repoData: {

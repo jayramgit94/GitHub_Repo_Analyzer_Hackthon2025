@@ -1,13 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false, // Remove X-Powered-By: Next.js header
   images: {
     remotePatterns: [
       { protocol: "https", hostname: "avatars.githubusercontent.com" },
       { protocol: "https", hostname: "github.com" },
     ],
   },
-  // Vercel automatically handles serverless functions
-  // No need for custom server configuration
 };
 
 module.exports = nextConfig;

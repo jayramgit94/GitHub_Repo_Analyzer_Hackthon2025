@@ -129,7 +129,7 @@ export default function AdminPage() {
       const res = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email: username, password }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -204,13 +204,13 @@ export default function AdminPage() {
 
               <form onSubmit={handleLogin} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Username</label>
+                  <label className="block text-sm font-medium text-[var(--foreground)] mb-1.5">Email</label>
                   <input
-                    type="text"
+                    type="email"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className="input-field"
-                    placeholder="Enter username"
+                    placeholder="admin@gitrepoanalyzer.com"
                     required
                     suppressHydrationWarning
                   />

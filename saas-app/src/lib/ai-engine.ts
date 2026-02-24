@@ -83,6 +83,7 @@ export interface AnalysisResult {
   estimatedTeamSize: string;
   repoHealth: "excellent" | "good" | "fair" | "needs-work" | "critical";
   analyzedAt: string;
+  aiPowered: boolean; // true = Gemini AI, false = Rule Engine
 }
 
 // ===================== RULE ENGINE =====================
@@ -432,12 +433,13 @@ async function getAIInsights(input: GitHubAnalysisInput, scores: ScoreBreakdown)
   summary: string;
   suggestions: string[];
   insights: AIInsight[];
+  aiPowered: boolean;
 }> {
   const apiKey = process.env.GEMINI_API_KEY;
 
   // Fallback if no API key
   if (!apiKey) {
-    return generateFallbackInsights(input, scores);
+    return { ...generateFallbackInsights(input, scores), aiPowered: false };
   }
 
   try {
@@ -505,7 +507,7 @@ Provide exactly 5 suggestions and 5-8 insights. Be specific to THIS repository, 
     // Parse JSON from response (handle potential markdown wrapping)
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      return generateFallbackInsights(input, scores);
+      return { ...generateFallbackInsights(input, scores), aiPowered: false };
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
@@ -519,14 +521,15 @@ Provide exactly 5 suggestions and 5-8 insights. Be specific to THIS repository, 
         description: i.description,
         suggestion: i.suggestion,
       })),
+      aiPowered: true,
     };
   } catch (error) {
     console.error("AI analysis failed, using fallback:", error);
-    return generateFallbackInsights(input, scores);
+    return { ...generateFallbackInsights(input, scores), aiPowered: false };
   }
 }
 
-// Fallback when AI is unavailable — still provides useful insights
+// Fallback when AI is unavailable — generates dynamic, repo-specific insights
 function generateFallbackInsights(
   input: GitHubAnalysisInput,
   scores: ScoreBreakdown
@@ -534,97 +537,260 @@ function generateFallbackInsights(
   const insights: AIInsight[] = [];
   const suggestions: string[] = [];
 
-  // Generate insights based on actual data
+  const lang = input.repo.language || "Unknown";
+  const totalFiles = input.fileTree.filter((f) => f.type === "file").length;
+  const totalDirs = input.fileTree.filter((f) => f.type === "dir").length;
+  const languages = Object.keys(input.repo.languages);
+  const topExtensions = input.fileTree
+    .filter((f) => f.type === "file" && f.path.includes("."))
+    .map((f) => f.path.split(".").pop()?.toLowerCase())
+    .filter(Boolean)
+    .reduce((acc, ext) => { acc[ext!] = (acc[ext!] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const sortedExts = Object.entries(topExtensions).sort((a, b) => b[1] - a[1]).slice(0, 5);
+
+  // Testing analysis - language-specific
   if (!input.hasTests) {
+    const testFramework = lang === "JavaScript" || lang === "TypeScript" ? "Jest or Vitest" :
+      lang === "Python" ? "Pytest" : lang === "Java" ? "JUnit 5" :
+      lang === "Go" ? "the built-in testing package" : lang === "Ruby" ? "RSpec" :
+      lang === "PHP" ? "PHPUnit" : lang === "C#" ? "xUnit or NUnit" : "a testing framework";
     insights.push({
       category: "testing",
       severity: "critical",
-      title: "No Tests Detected",
-      description: "No test files or test directories were found in this repository.",
-      suggestion: "Add unit tests using a framework like Jest (JS), Pytest (Python), or JUnit (Java).",
+      title: "No Test Suite Detected",
+      description: `No test files found across ${totalFiles} files. For a ${lang} project with ${input.contributors.length} contributor${input.contributors.length > 1 ? "s" : ""}, automated testing is essential to prevent regressions.`,
+      suggestion: `Set up ${testFramework} and aim for at least 70% code coverage. Start by testing core business logic.`,
     });
-    suggestions.push("Add automated tests to improve code reliability and catch bugs early.");
+    suggestions.push(`Implement automated testing with ${testFramework} — focus on critical paths first.`);
+  } else {
+    const testFiles = input.fileTree.filter((f) => 
+      f.type === "file" && (f.path.includes("test") || f.path.includes("spec") || f.path.includes("__tests__"))
+    );
+    if (testFiles.length < totalFiles * 0.1) {
+      insights.push({
+        category: "testing",
+        severity: "warning",
+        title: "Low Test Coverage Indication",
+        description: `Found ${testFiles.length} test-related files out of ${totalFiles} total files (${Math.round(testFiles.length / totalFiles * 100)}%). Consider expanding test coverage.`,
+        suggestion: "Increase test coverage by adding integration tests and edge case testing.",
+      });
+    } else {
+      insights.push({
+        category: "testing",
+        severity: "success",
+        title: "Test Suite Present",
+        description: `Found ${testFiles.length} test-related files, indicating good testing practices in this ${lang} project.`,
+      });
+    }
   }
 
+  // CI/CD analysis
   if (!input.hasCICD) {
     insights.push({
       category: "architecture",
       severity: "warning",
-      title: "No CI/CD Pipeline",
-      description: "No continuous integration or deployment configuration was found.",
-      suggestion: "Set up GitHub Actions for automated testing and deployment.",
+      title: "No CI/CD Pipeline Configured",
+      description: `With ${input.contributors.length} contributor${input.contributors.length > 1 ? "s" : ""} and ${input.repo.forks} fork${input.repo.forks !== 1 ? "s" : ""}, automated pipelines would ensure consistent code quality.`,
+      suggestion: "Create a .github/workflows/ci.yml with build, test, and lint steps for every pull request.",
     });
-    suggestions.push("Configure CI/CD with GitHub Actions to automate testing on every push.");
+    suggestions.push("Set up GitHub Actions CI/CD to automate testing and deployment on every push.");
+  } else {
+    insights.push({
+      category: "architecture",
+      severity: "success",
+      title: "CI/CD Pipeline Active",
+      description: "Continuous integration is configured, helping maintain code quality across contributions.",
+    });
   }
 
+  // License analysis
   if (!input.hasLicense) {
     insights.push({
       category: "documentation",
       severity: "critical",
-      title: "Missing License",
-      description: "Without a license, the code cannot legally be used or contributed to by others.",
-      suggestion: "Add an MIT, Apache 2.0, or GPL license depending on your intended use.",
+      title: "Missing License File",
+      description: `With ${input.repo.stars} star${input.repo.stars !== 1 ? "s" : ""} and ${input.repo.forks} fork${input.repo.forks !== 1 ? "s" : ""}, a license is critical for community contribution.`,
+      suggestion: "Add an MIT or Apache 2.0 license. Without one, the code is technically all-rights-reserved.",
     });
   }
 
+  // Documentation analysis - detailed
   if (scores.documentation < 50) {
+    const missingDocs: string[] = [];
+    if (!input.readme || input.readme.length < 200) missingDocs.push("comprehensive README");
+    if (!input.hasContributing) missingDocs.push("CONTRIBUTING.md");
+    if (!input.hasChangelog) missingDocs.push("CHANGELOG.md");
     insights.push({
       category: "documentation",
-      severity: "warning",
-      title: "Documentation Needs Improvement",
-      description: `Documentation score is ${scores.documentation}/100. Key sections may be missing from your README.`,
-      suggestion: "Add installation instructions, usage examples, API documentation, and contributing guidelines.",
+      severity: scores.documentation < 30 ? "critical" : "warning",
+      title: "Documentation Below Standards",
+      description: `Documentation score is ${scores.documentation}/100. Missing: ${missingDocs.join(", ") || "key sections in existing docs"}.`,
+      suggestion: "Add installation steps, usage examples, API reference, and architecture overview to your README.",
     });
-    suggestions.push("Improve README with installation steps, usage examples, and API reference.");
+    suggestions.push(`Improve documentation (currently ${scores.documentation}/100) — add setup guide, usage examples, and architecture overview.`);
+  } else if (scores.documentation >= 70) {
+    insights.push({
+      category: "documentation",
+      severity: "success",
+      title: "Good Documentation",
+      description: `Documentation score of ${scores.documentation}/100 indicates well-maintained project docs.`,
+    });
   }
 
+  // Security analysis - detailed
   if (scores.security < 60) {
+    const secIssues: string[] = [];
+    if (!input.hasEnvExample) secIssues.push("no .env.example for secret management");
+    if (!input.hasGitignore) secIssues.push("missing .gitignore (risk of committing secrets)");
     insights.push({
       category: "security",
-      severity: "warning",
+      severity: scores.security < 40 ? "critical" : "warning",
       title: "Security Practices Need Attention",
-      description: `Security score is ${scores.security}/100.`,
-      suggestion: "Add .env.example, security policy, and ensure sensitive files are gitignored.",
+      description: `Security score is ${scores.security}/100. Issues: ${secIssues.join(", ") || "review security configuration"}.`,
+      suggestion: "Add .env.example, SECURITY.md, and ensure all sensitive files are in .gitignore.",
     });
+    suggestions.push(`Address security concerns (score: ${scores.security}/100) — add environment variable templates and security policy.`);
   }
 
-  if (input.contributors.length < 2) {
+  // Architecture analysis based on project size
+  if (totalFiles > 100) {
+    if (totalDirs < 5) {
+      insights.push({
+        category: "architecture",
+        severity: "warning",
+        title: "Flat Project Structure",
+        description: `${totalFiles} files in only ${totalDirs} directories suggests insufficient code organization.`,
+        suggestion: "Organize code into logical modules: src/, tests/, docs/, config/. Consider domain-driven structure.",
+      });
+    }
+  }
+
+  // Language-specific insights
+  if (languages.length > 5) {
     insights.push({
       category: "architecture",
       severity: "info",
-      title: "Single Developer Project",
-      description: "This project has a single contributor. Bus factor is 1.",
-      suggestion: "Consider documenting architecture decisions and onboarding guides for future contributors.",
+      title: "Multi-Language Project",
+      description: `Uses ${languages.length} languages (${languages.slice(0, 4).join(", ")}${languages.length > 4 ? "..." : ""}). Ensure consistent tooling and documentation across all.`,
+      suggestion: "Add language-specific linting rules and ensure each language has appropriate build tools configured.",
     });
   }
 
+  // Performance & dependency insights
+  if (input.fileTree.some((f) => f.path === "package.json")) {
+    if (!input.fileTree.some((f) => f.path === "package-lock.json" || f.path === "yarn.lock" || f.path === "pnpm-lock.yaml")) {
+      insights.push({
+        category: "dependencies",
+        severity: "warning",
+        title: "No Lock File Detected",
+        description: "No package lock file found. This can lead to inconsistent dependency versions across environments.",
+        suggestion: "Commit your package-lock.json, yarn.lock, or pnpm-lock.yaml to ensure reproducible builds.",
+      });
+    }
+  }
+
+  // Docker analysis
+  if (!input.hasDockerfile && totalFiles > 20) {
+    insights.push({
+      category: "architecture",
+      severity: "info",
+      title: "No Containerization",
+      description: `A ${lang} project with ${totalFiles} files would benefit from Docker for consistent development and deployment environments.`,
+      suggestion: "Add a Dockerfile and docker-compose.yml for portable development and production deployment.",
+    });
+  }
+
+  // Contributor insights
+  if (input.contributors.length === 1) {
+    insights.push({
+      category: "architecture",
+      severity: "info",
+      title: "Solo Developer Project",
+      description: `Single contributor with ${input.repo.stars} star${input.repo.stars !== 1 ? "s" : ""}. Document architecture decisions to lower the bus factor.`,
+      suggestion: "Add ADR (Architecture Decision Records) and comprehensive onboarding docs for future contributors.",
+    });
+  } else if (input.contributors.length >= 5) {
+    insights.push({
+      category: "architecture",
+      severity: "success",
+      title: "Active Contributor Community",
+      description: `${input.contributors.length} contributors indicates healthy project collaboration and community engagement.`,
+    });
+  }
+
+  // File composition insights
+  if (sortedExts.length > 0) {
+    const primary = sortedExts[0];
+    const pct = Math.round((primary[1] / totalFiles) * 100);
+    if (pct > 80) {
+      insights.push({
+        category: "architecture",
+        severity: "info",
+        title: `Primarily .${primary[0]} Files (${pct}%)`,
+        description: `${primary[1]} of ${totalFiles} files are .${primary[0]} files. Consider if supporting files (tests, configs, docs) are adequate.`,
+      });
+    }
+  }
+
+  // Strength-based insights
   if (scores.overall >= 80) {
     insights.push({
       category: "architecture",
       severity: "success",
       title: "Well-Maintained Repository",
-      description: "This repository follows many best practices and is well-maintained.",
+      description: `Overall score of ${scores.overall}/100 reflects strong engineering practices across code quality, docs, and security.`,
+    });
+  } else if (scores.overall >= 60) {
+    insights.push({
+      category: "architecture",
+      severity: "info",
+      title: "Solid Foundation with Room to Grow",
+      description: `Overall ${scores.overall}/100. Core structure is good — focus on the lowest-scoring areas for the biggest improvement.`,
     });
   }
 
+  // Fill suggestions if needed
   if (suggestions.length < 5) {
-    const defaults = [
-      "Add comprehensive error handling and input validation.",
-      "Consider adding TypeScript for type safety.",
-      "Set up code coverage reporting to track test quality.",
-      "Add pre-commit hooks for linting and formatting.",
-      "Create a CONTRIBUTING.md to guide open-source contributors.",
+    const contextSuggestions = [
+      input.repo.stars > 50 ? "Add a code of conduct for your growing community." : "Add badges and screenshots to README to attract more contributors.",
+      totalFiles > 50 ? "Consider adding architectural documentation (diagrams, module overview)." : "Add inline code comments for complex logic.",
+      !input.hasDockerfile ? "Containerize the application with Docker for portable deployment." : "Add health check endpoints for production monitoring.",
+      languages.includes("TypeScript") || languages.includes("JavaScript") ? "Set up pre-commit hooks with Husky for linting and formatting." : "Add pre-commit hooks for automated code quality checks.",
+      input.contributors.length > 1 ? "Create pull request templates to standardize code review." : "Document your development workflow for future collaborators.",
+      "Set up code coverage reporting and aim for at least 70% coverage.",
+      "Add performance benchmarks for critical code paths.",
     ];
-    suggestions.push(...defaults.slice(0, 5 - suggestions.length));
+    for (const s of contextSuggestions) {
+      if (suggestions.length >= 5) break;
+      if (!suggestions.includes(s)) suggestions.push(s);
+    }
   }
 
-  const summary = `${input.repo.fullName} is a ${input.repo.language || "multi-language"} project with an overall score of ${scores.overall}/100. ${
-    scores.overall >= 70
-      ? "The project demonstrates good engineering practices."
-      : "There are several areas that could be improved for production readiness."
+  // Dynamic summary based on actual repo data
+  const healthLabel = scores.overall >= 85 ? "excellent" : scores.overall >= 70 ? "good" : scores.overall >= 50 ? "fair" : "needs improvement";
+  const strengthAreas = [
+    scores.codeQuality >= 70 && "code quality",
+    scores.architecture >= 70 && "architecture",
+    scores.documentation >= 70 && "documentation",
+    scores.security >= 70 && "security",
+    scores.bestPractices >= 70 && "best practices",
+  ].filter(Boolean);
+
+  const weakAreas = [
+    scores.codeQuality < 50 && "code quality",
+    scores.architecture < 50 && "architecture",
+    scores.documentation < 50 && "documentation",
+    scores.security < 50 && "security",
+    scores.bestPractices < 50 && "best practices",
+  ].filter(Boolean);
+
+  const summary = `${input.repo.fullName} is a ${lang} repository with ${totalFiles} files, ${input.contributors.length} contributor${input.contributors.length > 1 ? "s" : ""}, and an overall health score of ${scores.overall}/100 (${healthLabel}). ${
+    strengthAreas.length > 0 ? `Strong areas include ${strengthAreas.join(", ")}.` : ""
+  } ${
+    weakAreas.length > 0 ? `Key areas for improvement: ${weakAreas.join(", ")}.` : "The project follows solid engineering practices."
   }`;
 
-  return { summary, suggestions: suggestions.slice(0, 5), insights };
+  return { summary, suggestions: suggestions.slice(0, 5), insights: insights.slice(0, 8) };
 }
 
 // ===================== MAIN ANALYSIS FUNCTION =====================
@@ -707,5 +873,6 @@ export async function analyzeRepository(input: GitHubAnalysisInput): Promise<Ana
     estimatedTeamSize,
     repoHealth,
     analyzedAt: new Date().toISOString(),
+    aiPowered: aiResults.aiPowered,
   };
 }

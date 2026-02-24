@@ -211,7 +211,7 @@ export default function HomePage() {
       <footer className="relative z-10 border-t border-[var(--border)] py-8 px-4 bg-[var(--card)]">
         <div className="max-w-5xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs text-[var(--muted-fg)]">
-            &copy; {new Date().getFullYear()} GitRepo Analyzer. Built with Next.js & Gemini AI.
+            &copy; {new Date().getFullYear()} GitRepo Analyzer. Powered by AI.
           </p>
           <div className="flex items-center gap-6">
             <a
